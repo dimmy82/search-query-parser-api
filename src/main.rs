@@ -1,13 +1,18 @@
 use actix_web::{get, web, App, HttpServer, Responder};
-use search_query_parser::{condition::Condition, condition::Operator, parse_query_to_condition};
+use search_query_parser::{parse_query_to_condition, Condition, Operator};
 use serde::Serialize;
+use serde_json::{json, Value};
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    HttpServer::new(|| App::new().service(parse_query))
-        .bind(("0.0.0.0", 12345))?
-        .run()
-        .await
+    HttpServer::new(|| {
+        App::new()
+            .service(parse_query)
+            .service(parse_query_to_es_dsl)
+    })
+    .bind(("0.0.0.0", 12345))?
+    .run()
+    .await
 }
 
 #[get("/v1/query/{query_string}")]
@@ -17,6 +22,17 @@ async fn parse_query(query_string: web::Path<String>) -> impl Responder {
         Err(e) => {
             println!("ERROR: {e}");
             web::Json(json(Condition::None))
+        }
+    }
+}
+
+#[get("/v1/query/{query_string}/es_dsl")]
+async fn parse_query_to_es_dsl(query_string: web::Path<String>) -> impl Responder {
+    match parse_query_to_condition(query_string.as_ref()) {
+        Ok(condition) => web::Json(es_dsl_json(condition)),
+        Err(e) => {
+            println!("ERROR: {e}");
+            web::Json(json!({}))
         }
     }
 }
@@ -31,6 +47,49 @@ fn json(condition: Condition) -> ConditionJson {
             Operator::Or => ConditionJson::or(value.into_iter().map(|v| json(v)).collect()),
         },
         _ => ConditionJson::none(),
+    }
+}
+
+fn es_dsl_json(condition: Condition) -> Value {
+    match condition {
+        Condition::Keyword(value) => json!(
+            {
+                "match": {
+                    "target_field": value
+                }
+            }
+        ),
+        Condition::PhraseKeyword(value) => json!(
+            {
+                "match_phrase": {
+                    "target_field": value
+                }
+            }
+        ),
+        Condition::Not(value) => json!(
+            {
+                "bool": {
+                    "must_not": es_dsl_json(*value)
+                }
+            }
+        ),
+        Condition::Operator(operator, value) => match operator {
+            Operator::And => json!(
+                {
+                    "bool": {
+                        "must": value.into_iter().map(|v| es_dsl_json(v)).collect::<Value>()
+                    }
+                }
+            ),
+            Operator::Or => json!(
+                {
+                    "bool": {
+                        "should": value.into_iter().map(|v| es_dsl_json(v)).collect::<Value>()
+                    }
+                }
+            ),
+        },
+        _ => json!({}),
     }
 }
 
