@@ -819,6 +819,8 @@ checksum = "d29ab0c6d3fc0ee92fe66e2d99f700eab17a8d57d1c1d3b748380fb20baa78cd"
 [[package]]
 name = "search-query-parser"
 version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b99c79b5a3051b1da3771ea88a02c42981e0222a774ed7c6fec4b8e8b5319b2a"
 dependencies = [
  "eyre",
  "regex",
